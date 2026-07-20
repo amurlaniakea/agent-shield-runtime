@@ -1,0 +1,38 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies (sensores del ecosistema + dev tools)
+        run: |
+          pip install --upgrade pip
+          pip install ruff pytest bandit
+          # Los 5 sensores se instalan desde GitHub (main) porque aun no
+          # estan en PyPI. Si algun repo es privado, el token fallara y el
+          # paso lo indica explicitamente.
+          pip install \
+            "git+https://github.com/amurlaniakea/scope-lib.git@main" \
+            "git+https://github.com/amurlaniakea/adi-shield.git@main" \
+            "git+https://github.com/amurlaniakea/wallet-guard.git@main" \
+            "git+https://github.com/amurlaniakea/goal-anchor.git@main" \
+            "git+https://github.com/amurlaniakea/trajectory-sentinel.git@main" || {
+              echo "FALLO al instalar sensores desde GitHub (¿repo privado sin token?).";
+              exit 1;
+            }
+          pip install -e .
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest
+      - run: bandit -r src -ll
+      - name: gitleaks (secret scan)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
