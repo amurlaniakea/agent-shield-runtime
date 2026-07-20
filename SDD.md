@@ -134,60 +134,58 @@ agent-shield-runtime/
 - H4: review honesto + auditoría de Claude en clone fresco (repo PRIVADO
   hasta entonces; público solo cuando Sil lo decida muy avanzado).
 
-## 12. Mejoras pendientes (post-comentario Dev.to, 2026-07-19)
+## 12. Mejoras pendientes (post-comentario Dev.to + auditoría de Claude, 2026-07-19)
 
-Tras dos rondas de feedback en el post de Dev.to (comentarista = agente del
-comentarista), se acordaron estos frentes para "apretar las tuercas" con
-Claude. Estado de cada uno:
+Estado de cada frente (rama `wip/paralelismo-timeout`, sin merge a main hasta
+auditoría de Claude en clone fresco):
 
-- **(A) Paralelismo + timeout + fail-open/close GLOBAL — YA HECHO (local).**
-  Commit af6131a (sin push): scope/adi/wallet en paralelo (ThreadPoolExecutor),
-  `sensor_timeout` (0.5s), `fail_mode` global ("closed" por defecto). Falta
-  push + auditoría Claude. R3 del SDD queda mitigado (ya no es "futuro:
-  paralelo").
+- **(A) Paralelismo + timeout + fail-open/close GLOBAL — HECHO (rama wip).**
+  scope/adi/wallet en paralelo (ThreadPoolExecutor), `sensor_timeout` (0.5s),
+  `fail_mode` global ("closed" por defecto). R3 mitigado.
+
+- **(F) P0 — Envenenamiento permanente de tarea (auto-DoS) — HECHO (rama wip).**
+  Hallazgo de auditoría de Claude (clone fresco 3c7d950): `correlate()` bloquea
+  por cualquier `block` en TODO el historial de `trajectory-sentinel`, que
+  nunca se poda -> la tarea queda bloqueada a perpetuidad tras el primer
+  block real. Fix: `runtime.py` aplica ventana `correlation_window` (default
+  10) de las últimas N señales por task_id antes de llamar a `correlate()`.
+  Además se eliminó la doble publicación de adi-shield al bus (que distorsionaba
+  la ventana). Test de regresión: `test_recovery.py` (recovery + persiste-en-
+  ventana). Decision de diseño: primera iteración en agent-shield-runtime (no
+  toca trajectory-sentinel); anotado para llevarlo al sensor si Claude lo
+  valida.
+
+- **(G) P1 — Criterio hardcodeado rompe la sub-senal de deriva — HECHO (rama wip).**
+  `runtime.py` pasaba el literal `"iii_transitive"` a `goal_anchor.report_drift`
+  en cada llamada. Ahora usa `scope_v.criterion` real (i_/ii_/iii_transitive/
+  deny/none). Sin esto, toda tarea legítima contaba como 100% transitiva y
+  podía generar falsos `confirm` por deriva.
 
 - **(B) Política fail-open/fail-close POR SENSOR — PENDIENTE (diseño).**
-  Hoy `fail_mode` es global. Decidir si cada sensor tiene su propia política
-  (p.ej. adi-shield caído = siempre fail-closed; scope-lib caído = ¿fail-open
-  para no inutilizar el agente?). Riesgo de hacerlo mal: fail-open en
-  adi-shield = agujero de inyección; fail-closed en scope-lib = agente
-  inutilizable. Documentar valor por defecto por sensor en este SDD antes de
-  implementar.
+  Hoy `fail_mode` es global. Decidir valor por defecto por sensor antes de
+  tocar código (riesgo: fail-open en adi-shield = agujero de inyección).
 
 - **(C) Cancelación temprana / modo `abort-on-block` — PENDIENTE (diseño).**
-  Hoy el runtime NO corta: espera a todos los sensores (o su timeout) y decide
-  al final, favoreciendo telemetría. Postura acordada (híbrida, configurable):
-  **fail-fast en la EJECUCIÓN** (no ejecutar en cuanto hay block) pero
-  **preservar la EVIDENCIA** (dejar que los sensores restantes terminen dentro
-  de su timeout y publiquen al bus). Nota técnica: en Python no se preempta un
-  thread que ya corre (`future.cancel()` solo antes de arrancar), así que
-  "cancelar en seco" apenas ahorra y quema evidencia. Añadir modo opcional
-  `abort-on-block` para quien priorice latencia sobre auditoría.
+  Postura acordada: fail-fast en ejecución, preservar evidencia. Modo opt-in.
 
 - **(D) Benchmark de latencia del paralelismo — PENDIENTE (R3 del SDD).**
-  Medir overhead real: secuencial vs paralelo con N sensores, y cómo escala el
-  timeout. Sin esto el claim de "latencia = del más lento" es teórico. Añadir
-  `benchmarks/bench_latency.py` que compare ambos modos con los 5 sensores
-  reales.
+  `benchmarks/bench_latency.py` comparando secuencial vs paralelo.
 
 - **(E) H3 — Adaptadores de framework reales (LangChain/AutoGen) — PENDIENTE.**
-  El hito que el comentarista marcó como el real: cablear el runtime
-  transparentemente delante del executor nativo del framework, para medir
-  coste operacional y beneficio más allá de tests. Hasta entonces el agente
-  debe llamar manualmente a `ShieldRuntime.execute()`.
+  El hito que demuestra el hook en producción.
 
-Orden de implementación propuesto con Claude: E (H3) primero si se quiere
-medir en producción, luego B y C (políticas de diseño, pequeñas pero
-delicadas), luego D (benchmark). Todas entran en la auditoría de Claude antes
-de merge a main.
+Orden tras P0/P1: E (H3) -> B/C -> D. Todo entra en auditoría Claude antes de
+merge a main.
 
-## 13. Estado de hitos (actualizado 2026-07-19)
+## 13. Estado de hitos (actualizado 2026-07-19, rama wip/paralelismo-timeout)
 
 - H1: ✅ scaffold + CI verde.
-- H2: ✅ ShieldRuntime + adaptador genérico + AC1-AC5 (commit d79e761).
-- H2.5: ✅ paralelismo + timeout + fail-open/close global (commit af6131a, local).
-- H3: ⏳ adaptador de framework real (ver (E) arriba).
-- H4: ⏳ auditoría de Claude en clone fresco (pendiente; servicio cortado).
+- H2: ✅ ShieldRuntime + adaptador genérico + AC1-AC5.
+- H2.5: ✅ paralelismo + timeout + fail-open/close global.
+- F (P0): ✅ envenenamiento permanente arreglado (ventana de correlación).
+- G (P1): ✅ criterio real en report_drift.
+- H3: ⏳ adaptador de framework real.
+- H4: ⏳ auditoría de Claude en clone fresco (repo ya PÚBLICO para que clone).
 - B/C/D: ⏳ mejoras de diseño (ver §12).
 
 ## 11. Visibilidad / Gobernanza

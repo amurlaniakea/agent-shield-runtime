@@ -26,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from adi_shield.bus import LocalSignalBus, Signal
+from adi_shield.bus import LocalSignalBus
 from adi_shield.detector import ADIShield
 from adi_shield.detector import ToolCall as ADIToolCall
 from adi_shield.provenance import Arg as ADIArg
@@ -154,36 +154,37 @@ class ShieldRuntime:
             {"scope": _scope, "adi": _adi, "wallet": _wallet}
         )
 
-        # adi-shield publica al bus (necesario para la correlacion)
-        self.bus.publish(
-            Signal(
-                sensor="adi-shield",
-                task_id=call.task_id,
-                event="denial" if adi_dec.verdict == "block" else "tool_call",
-                verdict=adi_dec.verdict,
-                confidence=adi_dec.confidence,
-                detail=adi_dec.mechanism,
-            )
-        )
+        # adi-shield YA publica su veredicto al bus en evaluate() (ver
+        # adi_shield/detector.py). NO se republica aqui: duplicar distorsiona
+        # la ventana de correlacion (P0) y el bus del trajectory-sentinel.
+        # goal-anchor publica su propia senal de deriva en el bloque de abajo.
 
         # 4. goal-anchor (deriva) — SECUENCIAL: depende del ancla confirmada
         if anchor is not None and anchor.confirmed_by_user:
+            # P1: usar el criterion REAL que emite scope-lib (i_/ii_/iii_transitive/
+            # deny/none), NO el literal "iii_transitive". Pasar el literal sesgaba
+            # la sub-senal de deriva (siempre 100% transitivo) y podia generar
+            # falsos confirm en tareas largas legítimas.
             drift = self.goal_anchor.report_drift(
-                call.task_id, "iii_transitive", call.claimed_subobjective, effect_text=action.target
+                call.task_id, scope_v.criterion, call.claimed_subobjective, effect_text=action.target
             )
             if drift is not None and drift.alert:
                 self.bus.publish(drift.to_signal(call.task_id))
 
         # 5. trajectory-sentinel (correlación agregada) — SECUENCIAL: depende del bus
         rec = self.sentinel.report(call.task_id)
-        signals = (
-            [
+        # P0: podar el historial antes de correlar. Sin esto, un block
+        # historico nunca desaparece y paraliza la tarea para siempre
+        # (auto-DoS). Solo se pasan las ultimas N senales por task_id.
+        if rec and rec.signals:
+            window = self.config.correlation_window
+            recent = rec.signals[-window:] if window and window > 0 else rec.signals
+            signals = [
                 {"sensor": s.sensor, "verdict": s.verdict, "event": s.event, "detail": s.detail}
-                for s in rec.signals
+                for s in recent
             ]
-            if rec
-            else []
-        )
+        else:
+            signals = []
         corr = correlate(signals) if signals else None
 
         # ---- decisión agregada (worst-verdict, sin cambios) ----

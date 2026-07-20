@@ -45,6 +45,12 @@ class RuntimeConfig:
     sensor_timeout: float = 0.5
     # "closed" -> un sensor lento/caído cuenta como BLOCK (fail-closed, por
     # defecto en defensa). "open" -> cuenta como allow (fail-open, riesgoso).
+    # Ventana de señales pasadas a correlate(): solo las ultimas N senales por
+    # task_id. Evita el envenenamiento permanente (P0): un block historico no
+    # debe bloquear la tarea para siempre. 0 = sin ventana (todo el historial,
+    # comportamiento vulnerable). Default 10, coherente con la ventana de
+    # goal-anchor.
+    correlation_window: int = 10
     fail_mode: str = "closed"
     # Inyección del executor nativo del agente. El runtime lo llama SOLO
     # cuando todos los sensores dicen allow.
