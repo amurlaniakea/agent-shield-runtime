@@ -134,6 +134,62 @@ agent-shield-runtime/
 - H4: review honesto + auditoría de Claude en clone fresco (repo PRIVADO
   hasta entonces; público solo cuando Sil lo decida muy avanzado).
 
+## 12. Mejoras pendientes (post-comentario Dev.to, 2026-07-19)
+
+Tras dos rondas de feedback en el post de Dev.to (comentarista = agente del
+comentarista), se acordaron estos frentes para "apretar las tuercas" con
+Claude. Estado de cada uno:
+
+- **(A) Paralelismo + timeout + fail-open/close GLOBAL — YA HECHO (local).**
+  Commit af6131a (sin push): scope/adi/wallet en paralelo (ThreadPoolExecutor),
+  `sensor_timeout` (0.5s), `fail_mode` global ("closed" por defecto). Falta
+  push + auditoría Claude. R3 del SDD queda mitigado (ya no es "futuro:
+  paralelo").
+
+- **(B) Política fail-open/fail-close POR SENSOR — PENDIENTE (diseño).**
+  Hoy `fail_mode` es global. Decidir si cada sensor tiene su propia política
+  (p.ej. adi-shield caído = siempre fail-closed; scope-lib caído = ¿fail-open
+  para no inutilizar el agente?). Riesgo de hacerlo mal: fail-open en
+  adi-shield = agujero de inyección; fail-closed en scope-lib = agente
+  inutilizable. Documentar valor por defecto por sensor en este SDD antes de
+  implementar.
+
+- **(C) Cancelación temprana / modo `abort-on-block` — PENDIENTE (diseño).**
+  Hoy el runtime NO corta: espera a todos los sensores (o su timeout) y decide
+  al final, favoreciendo telemetría. Postura acordada (híbrida, configurable):
+  **fail-fast en la EJECUCIÓN** (no ejecutar en cuanto hay block) pero
+  **preservar la EVIDENCIA** (dejar que los sensores restantes terminen dentro
+  de su timeout y publiquen al bus). Nota técnica: en Python no se preempta un
+  thread que ya corre (`future.cancel()` solo antes de arrancar), así que
+  "cancelar en seco" apenas ahorra y quema evidencia. Añadir modo opcional
+  `abort-on-block` para quien priorice latencia sobre auditoría.
+
+- **(D) Benchmark de latencia del paralelismo — PENDIENTE (R3 del SDD).**
+  Medir overhead real: secuencial vs paralelo con N sensores, y cómo escala el
+  timeout. Sin esto el claim de "latencia = del más lento" es teórico. Añadir
+  `benchmarks/bench_latency.py` que compare ambos modos con los 5 sensores
+  reales.
+
+- **(E) H3 — Adaptadores de framework reales (LangChain/AutoGen) — PENDIENTE.**
+  El hito que el comentarista marcó como el real: cablear el runtime
+  transparentemente delante del executor nativo del framework, para medir
+  coste operacional y beneficio más allá de tests. Hasta entonces el agente
+  debe llamar manualmente a `ShieldRuntime.execute()`.
+
+Orden de implementación propuesto con Claude: E (H3) primero si se quiere
+medir en producción, luego B y C (políticas de diseño, pequeñas pero
+delicadas), luego D (benchmark). Todas entran en la auditoría de Claude antes
+de merge a main.
+
+## 13. Estado de hitos (actualizado 2026-07-19)
+
+- H1: ✅ scaffold + CI verde.
+- H2: ✅ ShieldRuntime + adaptador genérico + AC1-AC5 (commit d79e761).
+- H2.5: ✅ paralelismo + timeout + fail-open/close global (commit af6131a, local).
+- H3: ⏳ adaptador de framework real (ver (E) arriba).
+- H4: ⏳ auditoría de Claude en clone fresco (pendiente; servicio cortado).
+- B/C/D: ⏳ mejoras de diseño (ver §12).
+
 ## 11. Visibilidad / Gobernanza
 
 - Repo PRIVADO en GitHub hasta estar MUY avanzado (Sil: "privado primero hasta
