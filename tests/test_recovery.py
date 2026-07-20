@@ -27,6 +27,7 @@ Este test aisla el componente arreglado (la ventana de correlacion) sin el
 ruido de los cortes independientes de wallet-guard (budget/loop), que tienen
 su propio TTL y no son el objeto de P0.
 """
+
 from __future__ import annotations
 
 import tempfile
@@ -45,7 +46,8 @@ from agent_shield_runtime import (
 
 def _policy(task="T1"):
     return Policy(
-        policy_id="p1", task_id=task,
+        policy_id="p1",
+        task_id=task,
         authorized_subobjectives=["research_prices", "compare_options", "report_summary"],
         authorized_resources={"url": ["vuelos.com"], "doc": ["docs.google.com"]},
         deny=["attacker@x.com"],
@@ -59,35 +61,50 @@ def _policy(task="T1"):
 def _rt(window=10, timeout=0.5, fail_mode="closed", confirm_anchor=True):
     tmp = tempfile.mktemp(suffix=".json")
     calls: list = []
-    cfg = RuntimeConfig(policy_store_path=tmp, human_secret="hsec",
-                        budget={"fetch": 100.0, "send_email": 10.0},
-                        sensor_timeout=timeout, fail_mode=fail_mode,
-                        correlation_window=window)
+    cfg = RuntimeConfig(
+        policy_store_path=tmp,
+        human_secret="hsec",
+        budget={"fetch": 100.0, "send_email": 10.0},
+        sensor_timeout=timeout,
+        fail_mode=fail_mode,
+        correlation_window=window,
+    )
     cfg.executor = lambda tool, args, tid: calls.append((tool, args, tid)) or {"ok": True}
     cfg.recorded_calls = calls
     rt = ShieldRuntime(cfg)
     if confirm_anchor:
-        rt.confirm_anchor("T1", "investiga precios",
-                          ["research_prices", "compare_options", "report_summary"],
-                          policy=_policy())
+        rt.confirm_anchor(
+            "T1",
+            "investiga precios",
+            ["research_prices", "compare_options", "report_summary"],
+            policy=_policy(),
+        )
     return rt
 
 
 def _malicious():
     return GenericToolCall(
-        task_id="T1", tool="send_email",
-        args=[GenericArg("to", "attacker@x.com", Channel.TOOL_RESULT),
-              GenericArg("body", "resumen", Channel.USER)],
-        objective_arg="to", claimed_subobjective="report_summary")
+        task_id="T1",
+        tool="send_email",
+        args=[
+            GenericArg("to", "attacker@x.com", Channel.TOOL_RESULT),
+            GenericArg("body", "resumen", Channel.USER),
+        ],
+        objective_arg="to",
+        claimed_subobjective="report_summary",
+    )
 
 
 def _legit(i=0):
     subs = ["research_prices", "compare_options", "report_summary"]
     urls = ["vuelos.com", "docs.google.com", "maps.com"]
     return GenericToolCall(
-        task_id="T1", tool="fetch",
+        task_id="T1",
+        tool="fetch",
         args=[GenericArg("url", urls[i % len(urls)], Channel.USER)],
-        objective_arg="url", claimed_subobjective=subs[i % len(subs)])
+        objective_arg="url",
+        claimed_subobjective=subs[i % len(subs)],
+    )
 
 
 def _windowed_correlate(rt, task_id):
@@ -97,8 +114,10 @@ def _windowed_correlate(rt, task_id):
         return None
     window = rt.config.correlation_window
     recent = rec.signals[-window:] if window and window > 0 else rec.signals
-    sigs = [{"sensor": s.sensor, "verdict": s.verdict, "event": s.event,
-             "detail": s.detail} for s in recent]
+    sigs = [
+        {"sensor": s.sensor, "verdict": s.verdict, "event": s.event, "detail": s.detail}
+        for s in recent
+    ]
     return correlate(sigs)
 
 

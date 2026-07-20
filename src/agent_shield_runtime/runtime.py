@@ -166,7 +166,10 @@ class ShieldRuntime:
             # la sub-senal de deriva (siempre 100% transitivo) y podia generar
             # falsos confirm en tareas largas legítimas.
             drift = self.goal_anchor.report_drift(
-                call.task_id, scope_v.criterion, call.claimed_subobjective, effect_text=action.target
+                call.task_id,
+                scope_v.criterion,
+                call.claimed_subobjective,
+                effect_text=action.target,
             )
             if drift is not None and drift.alert:
                 self.bus.publish(drift.to_signal(call.task_id))
@@ -242,6 +245,7 @@ class ShieldRuntime:
                 reason = why
                 mechanism = why
                 confidence = 1.0
+
             return _V()
 
         results: dict[str, object] = {}
@@ -255,6 +259,7 @@ class ShieldRuntime:
                         results[k] = fut.result()
                 except Exception:  # timeout o excepcion del sensor
                     results[k] = _fake(
-                        fail_closed, f"{k}:sensor_unavailable(fail_{'closed' if fail_closed else 'open'})"
+                        fail_closed,
+                        f"{k}:sensor_unavailable(fail_{'closed' if fail_closed else 'open'})",
                     )
         return tuple(results[k] for k in tasks)
