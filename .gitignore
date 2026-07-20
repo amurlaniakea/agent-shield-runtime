@@ -1,0 +1,22 @@
+# Entorno virtual (no commitear)
+.venv/
+
+# Metadatos de herramientas
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Credenciales y secretos (nunca commitear)
+credentials/
+.hermes/
+.gnupg/
+.aws/
+
+# Entornos / caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.env

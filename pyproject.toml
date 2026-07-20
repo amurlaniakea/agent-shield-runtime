@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-shield-runtime"
+version = "0.1.0"
+description = "Hook de despliegue que intercepta cada tool-call del agente y lo evalua contra los 5 sensores de defensa (scope-lib, adi-shield, wallet-guard, goal-anchor, trajectory-sentinel)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Pedro Sordo Martínez", email = "amurlaniakea@gmail.com" }]
+dependencies = [
+    "scope-lib",
+    "adi-shield",
+    "wallet-guard",
+    "goal-anchor",
+    "trajectory-sentinel",
+]
+
+[project.optional-dependencies]
+dev = ["ruff", "pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+addopts = ""
+testpaths = ["tests"]
