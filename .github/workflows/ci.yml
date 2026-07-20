@@ -34,5 +34,9 @@ jobs:
       - run: bandit -r src -ll
       - name: gitleaks (secret scan)
         uses: gitleaks/gitleaks-action@v2
+        with:
+          # Escanear el arbol completo sin depender de git history (evita el
+          # bug de revision ambigua en push a main con shallow clone).
+          args: detect --source=. --no-git --redact
         env:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
