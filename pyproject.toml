@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Hook de despliegue que intercepta cada tool-call del agente y lo evalua contra los 5 sensores de defensa (scope-lib, adi-shield, wallet-guard, goal-anchor, trajectory-sentinel)."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "AGPL-3.0-or-later" }
+license = "AGPL-3.0-or-later"
 authors = [{ name = "Pedro Sordo Martínez", email = "amurlaniakea@gmail.com" }]
 dependencies = [
     "scope-lib",
