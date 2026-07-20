@@ -142,3 +142,46 @@ def test_P0_block_persists_inside_window(window=2):
     assert corr is not None
     assert corr.verdict == "block", corr.reason
     assert "hard_" in corr.mechanism, f"esperado block por historial: {corr.mechanism}"
+
+
+def test_P0bis_legit_repeated_calls_do_not_permablock():
+    # P0-bis: un agente 100% legítimo que usa el MISMO tool muchas veces con
+    # args distintos NO debe quedar bloqueado para siempre. Antes del fix,
+    # progress=0.0 hardcodeado hacia wallet-guard a cortar el bucle con retry
+    # permanente. Ahora el proxy de progreso (args distintos => avance) debe
+    # dejar pasar todas las llamadas.
+    rt = _rt(window=3, confirm_anchor=True)
+    urls = [f"vuelos.com/p{j}" for j in range(7)]  # inputs distintos
+    blocked = 0
+    for j in range(7):
+        call = GenericToolCall(
+            task_id="T1",
+            tool="fetch",
+            args=[GenericArg("url", urls[j], Channel.USER)],
+            objective_arg="url",
+            claimed_subobjective="research_prices",
+        )
+        v = rt.execute(call)
+        assert v.decision in ("allow", "confirm"), v.reasons
+        if v.decision == "block":
+            blocked += 1
+    assert blocked == 0, f"ninguna llamada legitima debio bloquearse: {blocked} bloqueadas"
+    assert rt.config.recorded_calls != [], "todas las llamadas legitimas deben ejecutarse"
+
+
+def test_P0bis_identical_repeat_still_capped():
+    # Complementario: si el agente repite BYTE-A-BYTE la MISMA llamada (sin
+    # progreso real), wallet-guard SÍ debe cortar el bucle (ese es su trabajo
+    # legitimo). Esto confirma que el proxy no desactiva el corte de reintentos
+    # identicos, solo el de inputs distintos.
+    rt = _rt(window=3, confirm_anchor=True)
+    same = GenericToolCall(
+        task_id="T1",
+        tool="fetch",
+        args=[GenericArg("url", "vuelos.com/misma", Channel.USER)],
+        objective_arg="url",
+        claimed_subobjective="research_prices",
+    )
+    decisions = [rt.execute(same).decision for _ in range(7)]
+    # las primeras 3 son allow/confirm; a partir de la 4 wallet corta (block)
+    assert "block" in decisions, f"reintento identico debe cortarse: {decisions}"

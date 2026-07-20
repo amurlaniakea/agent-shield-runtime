@@ -70,6 +70,9 @@ class ShieldRuntime:
         self.sentinel = TrajectorySentinel(self.bus)
         self._anchors: dict = {}
         self._policies: dict = {}
+        # Estado de progreso por (task_id, tool) para el proxy de wallet-guard
+        # (P0-bis): {"args": tupla, "progress": float}. Ver SDD §12 (P0-bis).
+        self._progress_state: dict[tuple[str, str], dict] = {}
 
     # ---- traducción GenericToolCall -> formatos de cada sensor ----
     def _to_action(self, call: GenericToolCall, anchor) -> Action:
@@ -141,6 +144,25 @@ class ShieldRuntime:
         action = self._to_action(call, anchor)
         adi_call = self._to_adi_call(call)
 
+        # P0-bis: proxy de progreso para wallet-guard. El runtime no conoce el
+        # progreso real de la tarea; usa como heuristica si los args de esta
+        # llamada difieren de los de la llamada anterior para (task_id, tool).
+        # Args distintos => el contador de progreso sube 1.0 (avance); iguales
+        # => se queda igual (sin avance). wallet-guard compara progress >
+        # last_progress (estricto), asi que subir monotonicamente es lo que
+        # interpreta como "la tarea avanza" y no corta el bucle. No es progreso
+        # semantico real, es una heuristica de "la llamada no es un reintento
+        # byte-a-byte del mismo input". Ver SDD §12 (P0-bis).
+        key = (call.task_id, call.tool)
+        prev = self._progress_state.get(key)
+        cur_args = tuple((a.name, a.value, a.channel.name) for a in call.args)
+        if prev is None:
+            progress = 1.0  # primer intento: arranca con avance
+        elif prev["args"] == cur_args:
+            progress = prev["progress"]  # reintento byte-a-byte: sin avance
+        else:
+            progress = prev["progress"] + 1.0  # input distinto: avanza 1 paso
+
         def _scope() -> object:
             return evaluate_scope(action, policy, anchor)
 
@@ -148,11 +170,14 @@ class ShieldRuntime:
             return self.adi.evaluate(adi_call)
 
         def _wallet() -> object:
-            return self.wallet.evaluate(call.task_id, call.tool, cost=1.0, progress=0.0)
+            return self.wallet.evaluate(call.task_id, call.tool, cost=1.0, progress=progress)
 
         scope_v, adi_dec, w_dec = self._run_parallel(
             {"scope": _scope, "adi": _adi, "wallet": _wallet}
         )
+
+        # actualizar estado de progreso para la proxima llamada (mismo task+tool)
+        self._progress_state[key] = {"args": cur_args, "progress": progress}
 
         # adi-shield YA publica su veredicto al bus en evaluate() (ver
         # adi_shield/detector.py). NO se republica aqui: duplicar distorsiona

@@ -155,6 +155,24 @@ auditoría de Claude en clone fresco):
   toca trajectory-sentinel); anotado para llevarlo al sensor si Claude lo
   valida.
 
+- **(H) P0-bis — `progress=0.0` hardcodeado bloquea uso normal (auto-DoS) — HECHO (rama wip).**
+  Hallazgo de auditoría de Claude (clone fresco `wip` @5245f70): `runtime.py`
+  llamaba `wallet.evaluate(..., progress=0.0)` fijo. wallet-guard corta el
+  bucle con `retry_loop_no_progress` cuando `attempts > max_retries` y el
+  progreso no avanza; como progress nunca subia, CUALQUIER tarea que usara el
+  mismo tool >3 veces (busquedas, paginas) quedaba bloqueada para siempre,
+  sin ataque. Fix (opcion 2 de Claude): proxy de progreso en el runtime — por
+  `(task_id, tool)` se guarda el hash de args y un contador; si los args
+  cambian respecto a la llamada anterior, el contador sube 1.0 (avance); si son
+  identicos, se queda (sin avance). Es una HEURISTICA, no progreso semantico
+  real: el runtime no conoce el progreso de la tarea. Documentado aqui para no
+  sobreprometer. Work futuro (opcion 1/3 de Claude, NO hecho): (1) que
+  GenericToolCall/exponga progreso real del framework; (3) que wallet-guard
+  tenga TTL para `attempts`/`last_progress` (tocaria el repo wallet-guard, SDD
+  propio). Test: `test_P0bis_legit_repeated_calls_do_not_permablock` +
+  `test_P0bis_identical_repeat_still_capped` (el corte de reintento identico
+  legitimo se preserva).
+
 - **(G) P1 — Criterio hardcodeado rompe la sub-senal de deriva — HECHO (rama wip).**
   `runtime.py` pasaba el literal `"iii_transitive"` a `goal_anchor.report_drift`
   en cada llamada. Ahora usa `scope_v.criterion` real (i_/ii_/iii_transitive/
@@ -184,6 +202,7 @@ merge a main.
 - H2.5: ✅ paralelismo + timeout + fail-open/close global.
 - F (P0): ✅ envenenamiento permanente arreglado (ventana de correlación).
 - G (P1): ✅ criterio real en report_drift.
+- H (P0-bis): ✅ proxy de progreso en wallet (args distintos => avance).
 - H3: ⏳ adaptador de framework real.
 - H4: ⏳ auditoría de Claude en clone fresco (repo ya PÚBLICO para que clone).
 - B/C/D: ⏳ mejoras de diseño (ver §12).
