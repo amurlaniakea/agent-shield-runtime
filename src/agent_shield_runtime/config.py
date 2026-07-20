@@ -40,6 +40,12 @@ class RuntimeConfig:
     block_on_confirm: bool = False
     # Budget de admisión por categoría para wallet-guard (p.ej. {"search": 100.0}).
     budget: dict[str, float] = field(default_factory=dict)
+    # Tiempo máximo (s) por sensor. Si un sensor no responde, se aplica
+    # fail_mode. 0 = sin timeout (espera indefinida; congela el agente).
+    sensor_timeout: float = 0.5
+    # "closed" -> un sensor lento/caído cuenta como BLOCK (fail-closed, por
+    # defecto en defensa). "open" -> cuenta como allow (fail-open, riesgoso).
+    fail_mode: str = "closed"
     # Inyección del executor nativo del agente. El runtime lo llama SOLO
     # cuando todos los sensores dicen allow.
     executor: Callable[[str, list, str], Any] | None = None
