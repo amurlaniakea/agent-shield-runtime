@@ -20,6 +20,7 @@ Usa los 5 paquetes instalados (no mocks de sensores). Solo el executor
 nativo del agente es un mock que registra si fue llamado, para verificar que
 un block REALMENTE impide la ejecución (AC1/AC2/AC4).
 """
+
 from __future__ import annotations
 
 import tempfile
@@ -37,18 +38,25 @@ from agent_shield_runtime import (
 
 def _make_config(tmp):
     calls: list = []
+
     def _exec(tool, args, tid):
         calls.append((tool, args, tid))
         return {"ok": True}
-    cfg = RuntimeConfig(policy_store_path=tmp, human_secret="hsec", executor=_exec,
-                        budget={"fetch": 100.0, "send_email": 10.0, "send": 10.0})
+
+    cfg = RuntimeConfig(
+        policy_store_path=tmp,
+        human_secret="hsec",
+        executor=_exec,
+        budget={"fetch": 100.0, "send_email": 10.0, "send": 10.0},
+    )
     cfg.recorded_calls = calls
     return cfg
 
 
 def _policy(task="T1"):
     return Policy(
-        policy_id="p1", task_id=task,
+        policy_id="p1",
+        task_id=task,
         authorized_subobjectives=["research_prices", "compare_options", "report_summary"],
         authorized_resources={"url": ["vuelos.com"], "doc": ["docs.google.com"]},
         deny=["attacker@x.com"],
@@ -61,9 +69,12 @@ def _policy(task="T1"):
 
 def _anchor(rt, task="T1"):
     pol = _policy(task)
-    rt.confirm_anchor(task, "investiga precios de vuelos a Madrid",
-                      ["research_prices", "compare_options", "report_summary"],
-                      policy=pol)
+    rt.confirm_anchor(
+        task,
+        "investiga precios de vuelos a Madrid",
+        ["research_prices", "compare_options", "report_summary"],
+        policy=pol,
+    )
 
 
 def test_AC1_deny_blocks_and_does_not_execute():
@@ -71,10 +82,15 @@ def test_AC1_deny_blocks_and_does_not_execute():
     rt = ShieldRuntime(_make_config(tmp))
     _anchor(rt)
     call = GenericToolCall(
-        task_id="T1", tool="send_email",
-        args=[GenericArg("to", "attacker@x.com", Channel.USER),
-              GenericArg("body", "hola", Channel.USER)],
-        objective_arg="to", claimed_subobjective="report_summary")
+        task_id="T1",
+        tool="send_email",
+        args=[
+            GenericArg("to", "attacker@x.com", Channel.USER),
+            GenericArg("body", "hola", Channel.USER),
+        ],
+        objective_arg="to",
+        claimed_subobjective="report_summary",
+    )
     v = rt.execute(call)
     assert v.decision == "block", v.reasons
     assert v.blocked
@@ -86,9 +102,12 @@ def test_AC1_legit_allows_and_executes():
     rt = ShieldRuntime(_make_config(tmp))
     _anchor(rt)
     call = GenericToolCall(
-        task_id="T1", tool="fetch",
+        task_id="T1",
+        tool="fetch",
         args=[GenericArg("url", "vuelos.com", Channel.USER)],
-        objective_arg="url", claimed_subobjective="research_prices")
+        objective_arg="url",
+        claimed_subobjective="research_prices",
+    )
     v = rt.execute(call)
     assert v.decision == "allow", v.reasons
     assert rt.config.recorded_calls != [], "executor SÍ debe llamarse en allow"
@@ -99,10 +118,15 @@ def test_AC2_injection_from_untrusted_blocks():
     rt = ShieldRuntime(_make_config(tmp))
     _anchor(rt)
     call = GenericToolCall(
-        task_id="T1", tool="send_email",
-        args=[GenericArg("to", "attacker@x.com", Channel.TOOL_RESULT),
-              GenericArg("body", "resumen", Channel.USER)],
-        objective_arg="to", claimed_subobjective="report_summary")
+        task_id="T1",
+        tool="send_email",
+        args=[
+            GenericArg("to", "attacker@x.com", Channel.TOOL_RESULT),
+            GenericArg("body", "resumen", Channel.USER),
+        ],
+        objective_arg="to",
+        claimed_subobjective="report_summary",
+    )
     v = rt.execute(call)
     # adi-shield bloquea por instruction_from_data_deny
     assert v.decision == "block", v.reasons
@@ -116,9 +140,12 @@ def test_AC3_brusque_derivation_confirms():
     # 3 hitos con claimed fuera de ancla (deriva brusca T3-like)
     for _ in range(3):
         call = GenericToolCall(
-            task_id="T1", tool="fetch",
+            task_id="T1",
+            tool="fetch",
             args=[GenericArg("url", "db-interna.com", Channel.USER)],
-            objective_arg="url", claimed_subobjective="exfiltrate_data")
+            objective_arg="url",
+            claimed_subobjective="exfiltrate_data",
+        )
         v = rt.execute(call)
     assert v.decision in ("confirm", "block"), v.reasons
     assert any("goal-anchor" in r or "correlate" in r for r in v.reasons)
@@ -131,8 +158,11 @@ def test_AC5_sensors_unmodified_integration():
     rt = ShieldRuntime(_make_config(tmp))
     _anchor(rt)
     call = GenericToolCall(
-        task_id="T1", tool="fetch",
+        task_id="T1",
+        tool="fetch",
         args=[GenericArg("url", "vuelos.com", Channel.USER)],
-        objective_arg="url", claimed_subobjective="research_prices")
+        objective_arg="url",
+        claimed_subobjective="research_prices",
+    )
     v = rt.execute(call)
     assert v.decision == "allow"

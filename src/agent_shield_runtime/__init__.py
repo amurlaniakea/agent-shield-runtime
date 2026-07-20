@@ -15,6 +15,7 @@
 # GNU Affero General Public License for more details.
 
 """agent-shield-runtime: hook de despliegue del ecosistema de defensa."""
+
 from __future__ import annotations
 
 from .adapters import Channel, GenericArg, GenericToolCall

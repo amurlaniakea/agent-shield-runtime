@@ -21,6 +21,7 @@ framework (LangChain, AutoGen, ...) traducen el tool-call nativo a este formato
 y viven aislados en `adapters/`. Así el runtime es reutilizable sin acoplarse
 a ningún agente concreto (SDD R1).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ from typing import Any
 
 class Channel(StrEnum):
     """Origen declarado de cada argumento (provenance)."""
+
     USER = "user"
     TOOL_RESULT = "tool_result"
     CONST = "const"
@@ -60,6 +62,7 @@ class GenericToolCall:
     INSTRUCTION_FROM_DATA. `claimed_subobjective` es el sub-objetivo que el
     agente declara servir (criterion i de scope-lib).
     """
+
     task_id: str
     tool: str
     args: list[GenericArg] = field(default_factory=list)
@@ -78,8 +81,7 @@ class GenericToolCall:
             "task_id": self.task_id,
             "tool": self.tool,
             "args": [
-                {"name": a.name, "value": a.value, "channel": a.channel.value}
-                for a in self.args
+                {"name": a.name, "value": a.value, "channel": a.channel.value} for a in self.args
             ],
             "objective_arg": self.objective_arg,
             "claimed_subobjective": self.claimed_subobjective,

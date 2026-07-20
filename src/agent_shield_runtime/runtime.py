@@ -20,6 +20,7 @@ Orquesta los 5 sensores (scope-lib, adi-shield, wallet-guard, goal-anchor,
 trajectory-sentinel) y ACTÚA sobre el veredicto agregado. NO reimplementa
 ningún sensor: solo los llama y decide block/confirm/allow.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -96,11 +97,12 @@ class ShieldRuntime:
         )
 
     # ---- ciclo de vida del ancla (RF5) ----
-    def confirm_anchor(self, task_id: str, objective: str, subobjectives: list[str],
-                       policy=None) -> None:
+    def confirm_anchor(
+        self, task_id: str, objective: str, subobjectives: list[str], policy=None
+    ) -> None:
         from goal_anchor.anchor import AnchorProposal
-        proposal = AnchorProposal(
-            task_id=task_id, objective=objective, subobjectives=subobjectives)
+
+        proposal = AnchorProposal(task_id=task_id, objective=objective, subobjectives=subobjectives)
         anchor = self.goal_anchor.propose(proposal)
         anchor = self.goal_anchor.confirm(anchor, policy=policy)
         # cache local para evaluate_scope
@@ -116,10 +118,12 @@ class ShieldRuntime:
                 d = store.anchors.get(task_id)
                 if d:
                     from scope_lib import Anchor
+
                     anchor = Anchor.from_dict(d)
                 p = store.policies.get(task_id)
                 if p:
                     from scope_lib import Policy
+
                     policy = Policy.from_dict(p)
             except (FileNotFoundError, ValueError):
                 pass
@@ -136,27 +140,37 @@ class ShieldRuntime:
         # 2. adi-shield
         adi_call = self._to_adi_call(call)
         adi_dec = self.adi.evaluate(adi_call)
-        self.bus.publish(Signal(
-            sensor="adi-shield", task_id=call.task_id,
-            event="denial" if adi_dec.verdict == "block" else "tool_call",
-            verdict=adi_dec.verdict, confidence=adi_dec.confidence,
-            detail=adi_dec.mechanism))
+        self.bus.publish(
+            Signal(
+                sensor="adi-shield",
+                task_id=call.task_id,
+                event="denial" if adi_dec.verdict == "block" else "tool_call",
+                verdict=adi_dec.verdict,
+                confidence=adi_dec.confidence,
+                detail=adi_dec.mechanism,
+            )
+        )
 
         # 3. wallet-guard
         w_dec = self.wallet.evaluate(call.task_id, call.tool, cost=1.0, progress=0.0)
         # 4. goal-anchor (deriva) — lo reporta solo si hay un ancla activa
         if anchor is not None and anchor.confirmed_by_user:
             drift = self.goal_anchor.report_drift(
-                call.task_id, "iii_transitive", call.claimed_subobjective,
-                effect_text=action.target)
+                call.task_id, "iii_transitive", call.claimed_subobjective, effect_text=action.target
+            )
             if drift is not None and drift.alert:
                 self.bus.publish(drift.to_signal(call.task_id))
 
         # 5. trajectory-sentinel (correlación agregada)
         rec = self.sentinel.report(call.task_id)
-        signals = [{"sensor": s.sensor, "verdict": s.verdict,
-                    "event": s.event, "detail": s.detail}
-                   for s in rec.signals] if rec else []
+        signals = (
+            [
+                {"sensor": s.sensor, "verdict": s.verdict, "event": s.event, "detail": s.detail}
+                for s in rec.signals
+            ]
+            if rec
+            else []
+        )
         corr = correlate(signals) if signals else None
 
         # ---- decisión agregada ----

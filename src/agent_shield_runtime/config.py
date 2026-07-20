@@ -15,6 +15,7 @@
 # GNU Affero General Public License for more details.
 
 """Configuración del runtime: paths, modo de acción, umbrales."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -33,6 +34,7 @@ class RuntimeConfig:
     `block_on_confirm`: si True, un 'confirm' se trata como bloqueo (más
       estricto). Por defecto False (pausa a humano).
     """
+
     policy_store_path: str = ""
     human_secret: str = ""
     block_on_confirm: bool = False

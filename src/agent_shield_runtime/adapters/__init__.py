@@ -19,6 +19,7 @@
 Cada adaptador traduce el tool-call nativo del framework al `GenericToolCall`
 interno. El núcleo del runtime no depende de ningún framework concreto.
 """
+
 from __future__ import annotations
 
 from .generic import Channel, GenericArg, GenericToolCall
