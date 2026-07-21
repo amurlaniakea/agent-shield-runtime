@@ -108,12 +108,19 @@ LLM (Thought/Reasoning) — demasiado frágil y no determinista para H3.
 
 ---
 
-### 4.4 `Channel` por argumento (provenance para adi-shield)
+### 4.5 `Channel` por argumento (provenance para adi-shield)
 
 **Decisión:** Heurística por coincidencia con historial de `ToolMessage`:
 
 ```python
 def _infer_channel(value: str, history: list[BaseMessage]) -> Channel:
+    # umbral mínimo de longitud antes de considerar coincidencia:
+    # evita falsos positivos con valores cortos/genéricos ("1", "ok",
+    # dominios muy comunes) que coincidirían por azar con cualquier
+    # ToolMessage previo.
+    MIN_LEN = 8
+    if len(value) < MIN_LEN:
+        return Channel.MODEL
     for msg in reversed(history):
         if isinstance(msg, ToolMessage):
             if msg.content and value in str(msg.content):
@@ -122,7 +129,7 @@ def _infer_channel(value: str, history: list[BaseMessage]) -> Channel:
 ```
 
 - `ToolMessage` (resultado de tool previo) → `TOOL_RESULT` (untrusted).
-- Si no hay coincidencia → `MODEL` (el LLM eligió el valor).
+- Si no hay coincidencia (o valor muy corto) → `MODEL` (el LLM decidió el valor).
 - NO se usa `USER` salvo que venga literalmente de `HumanMessage` (raro
   en tool args; se documenta como edge case).
 
@@ -133,7 +140,7 @@ outputs). Queda anotado como limitación conocida en el SDD.
 
 ---
 
-### 4.5 Verdict → acción (qué devuelve `ShieldedTool._run`)
+### 4.6 Verdict → acción (qué devuelve `ShieldedTool._run`)
 
 **Decisión:**
 
@@ -206,6 +213,16 @@ class ShieldConfirmRequired(Exception):
 - **AC7:** `ShieldConfirmRequired` expone `details` suficientes para que
   quien integre presente la decisión al humano y reintente.
 - **AC8:** Tests pasan sin LLM real, ruff/bandit limpios, CI verde.
+- **AC9 (interacción confirm + proxy de progreso P0-bis):** si un humano
+  confirma varias veces la MISMA tool-call exacta (mismos argumentos)
+  tras un `confirm`, el proxy de progreso de wallet-guard NO debe
+  bloquear por `retry_loop_no_progress` — el reintento explícito tras
+  confirmación humana cuenta como "avance explícito" y resetea el
+  contador de progreso para esa `(task_id, tool)` en el runtime. Se
+  verifica con un test que reproduce: confirm → humano aprueba → misma
+  llamada → confirm → humano aprueba → misma llamada → NO bloqueo por
+  wallet-guard. (Si no se resuelve en H3, queda documentado como
+  limitación conocida y work futuro).
 
 ---
 
