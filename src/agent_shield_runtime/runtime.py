@@ -23,9 +23,10 @@ ningún sensor: solo los llama y decide block/confirm/allow.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from adi_shield.bus import LocalSignalBus, Signal
+from adi_shield.bus import LocalSignalBus
 from adi_shield.detector import ADIShield
 from adi_shield.detector import ToolCall as ADIToolCall
 from adi_shield.provenance import Arg as ADIArg
@@ -69,6 +70,9 @@ class ShieldRuntime:
         self.sentinel = TrajectorySentinel(self.bus)
         self._anchors: dict = {}
         self._policies: dict = {}
+        # Estado de progreso por (task_id, tool) para el proxy de wallet-guard
+        # (P0-bis): {"args": tupla, "progress": float}. Ver SDD §12 (P0-bis).
+        self._progress_state: dict[tuple[str, str], dict] = {}
 
     # ---- traducción GenericToolCall -> formatos de cada sensor ----
     def _to_action(self, call: GenericToolCall, anchor) -> Action:
@@ -133,47 +137,85 @@ class ShieldRuntime:
     def execute(self, call: GenericToolCall) -> RuntimeVerdict:
         anchor, policy = self._load_anchor_policy(call.task_id)
 
-        # 1. scope-lib
+        # Sensores INDEPENDIENTES (scope / adi / wallet) corren en PARALELO
+        # para recortar latencia al del mas lento. Cada uno se envuelve con
+        # timeout + fail_mode: si no responde o lanza, se trata como block
+        # (fail-closed por defecto) o allow (fail-open), segun config.
         action = self._to_action(call, anchor)
-        scope_v = evaluate_scope(action, policy, anchor)
-
-        # 2. adi-shield
         adi_call = self._to_adi_call(call)
-        adi_dec = self.adi.evaluate(adi_call)
-        self.bus.publish(
-            Signal(
-                sensor="adi-shield",
-                task_id=call.task_id,
-                event="denial" if adi_dec.verdict == "block" else "tool_call",
-                verdict=adi_dec.verdict,
-                confidence=adi_dec.confidence,
-                detail=adi_dec.mechanism,
-            )
+
+        # P0-bis: proxy de progreso para wallet-guard. El runtime no conoce el
+        # progreso real de la tarea; usa como heuristica si los args de esta
+        # llamada difieren de los de la llamada anterior para (task_id, tool).
+        # Args distintos => el contador de progreso sube 1.0 (avance); iguales
+        # => se queda igual (sin avance). wallet-guard compara progress >
+        # last_progress (estricto), asi que subir monotonicamente es lo que
+        # interpreta como "la tarea avanza" y no corta el bucle. No es progreso
+        # semantico real, es una heuristica de "la llamada no es un reintento
+        # byte-a-byte del mismo input". Ver SDD §12 (P0-bis).
+        key = (call.task_id, call.tool)
+        prev = self._progress_state.get(key)
+        cur_args = tuple((a.name, a.value, a.channel.name) for a in call.args)
+        if prev is None:
+            progress = 1.0  # primer intento: arranca con avance
+        elif prev["args"] == cur_args:
+            progress = prev["progress"]  # reintento byte-a-byte: sin avance
+        else:
+            progress = prev["progress"] + 1.0  # input distinto: avanza 1 paso
+
+        def _scope() -> object:
+            return evaluate_scope(action, policy, anchor)
+
+        def _adi() -> object:
+            return self.adi.evaluate(adi_call)
+
+        def _wallet() -> object:
+            return self.wallet.evaluate(call.task_id, call.tool, cost=1.0, progress=progress)
+
+        scope_v, adi_dec, w_dec = self._run_parallel(
+            {"scope": _scope, "adi": _adi, "wallet": _wallet}
         )
 
-        # 3. wallet-guard
-        w_dec = self.wallet.evaluate(call.task_id, call.tool, cost=1.0, progress=0.0)
-        # 4. goal-anchor (deriva) — lo reporta solo si hay un ancla activa
+        # actualizar estado de progreso para la proxima llamada (mismo task+tool)
+        self._progress_state[key] = {"args": cur_args, "progress": progress}
+
+        # adi-shield YA publica su veredicto al bus en evaluate() (ver
+        # adi_shield/detector.py). NO se republica aqui: duplicar distorsiona
+        # la ventana de correlacion (P0) y el bus del trajectory-sentinel.
+        # goal-anchor publica su propia senal de deriva en el bloque de abajo.
+
+        # 4. goal-anchor (deriva) — SECUENCIAL: depende del ancla confirmada
         if anchor is not None and anchor.confirmed_by_user:
+            # P1: usar el criterion REAL que emite scope-lib (i_/ii_/iii_transitive/
+            # deny/none), NO el literal "iii_transitive". Pasar el literal sesgaba
+            # la sub-senal de deriva (siempre 100% transitivo) y podia generar
+            # falsos confirm en tareas largas legítimas.
             drift = self.goal_anchor.report_drift(
-                call.task_id, "iii_transitive", call.claimed_subobjective, effect_text=action.target
+                call.task_id,
+                scope_v.criterion,
+                call.claimed_subobjective,
+                effect_text=action.target,
             )
             if drift is not None and drift.alert:
                 self.bus.publish(drift.to_signal(call.task_id))
 
-        # 5. trajectory-sentinel (correlación agregada)
+        # 5. trajectory-sentinel (correlación agregada) — SECUENCIAL: depende del bus
         rec = self.sentinel.report(call.task_id)
-        signals = (
-            [
+        # P0: podar el historial antes de correlar. Sin esto, un block
+        # historico nunca desaparece y paraliza la tarea para siempre
+        # (auto-DoS). Solo se pasan las ultimas N senales por task_id.
+        if rec and rec.signals:
+            window = self.config.correlation_window
+            recent = rec.signals[-window:] if window and window > 0 else rec.signals
+            signals = [
                 {"sensor": s.sensor, "verdict": s.verdict, "event": s.event, "detail": s.detail}
-                for s in rec.signals
+                for s in recent
             ]
-            if rec
-            else []
-        )
+        else:
+            signals = []
         corr = correlate(signals) if signals else None
 
-        # ---- decisión agregada ----
+        # ---- decisión agregada (worst-verdict, sin cambios) ----
         blockers = []
         if scope_v.verdict.value == "block":
             blockers.append(f"scope:{scope_v.reason}")
@@ -206,3 +248,43 @@ class ShieldRuntime:
             return RuntimeVerdict("block", True, ["no executor configured"])
         result = executor(call.tool, [a.value for a in call.args], call.task_id)
         return RuntimeVerdict("allow", False, ["all sensors allow"], result)
+
+    def _run_parallel(self, tasks: dict[str, Callable[[], object]]) -> tuple:
+        """Corre sensores independientes en paralelo con timeout + fail_mode.
+
+        Devuelve una tupla con los resultados en el MISMO orden que `tasks`.
+        Si un sensor excede `sensor_timeout` o lanza, se sustituye por un
+        veredicto de fallo segun `fail_mode`:
+          - "closed" (defecto): cuenta como block (fail-closed).
+          - "open": cuenta como allow (fail-open, riesgoso).
+        """
+        from concurrent.futures import Future, ThreadPoolExecutor
+
+        timeout = self.config.sensor_timeout
+        fail_closed = self.config.fail_mode != "open"
+
+        def _fake(blocked: bool, why: str) -> object:
+            # veredicto sustituto tipo-ADI para mantener la interfaz de decision
+            class _V:
+                verdict = "block" if blocked else "allow"
+                reason = why
+                mechanism = why
+                confidence = 1.0
+
+            return _V()
+
+        results: dict[str, object] = {}
+        with ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+            futures: dict[str, Future] = {k: ex.submit(fn) for k, fn in tasks.items()}
+            for k, fut in futures.items():
+                try:
+                    if timeout > 0:
+                        results[k] = fut.result(timeout=timeout)
+                    else:
+                        results[k] = fut.result()
+                except Exception:  # timeout o excepcion del sensor
+                    results[k] = _fake(
+                        fail_closed,
+                        f"{k}:sensor_unavailable(fail_{'closed' if fail_closed else 'open'})",
+                    )
+        return tuple(results[k] for k in tasks)

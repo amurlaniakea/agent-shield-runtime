@@ -166,3 +166,34 @@ def test_AC5_sensors_unmodified_integration():
     )
     v = rt.execute(call)
     assert v.decision == "allow"
+
+
+def test_AC4_loop_cut_after_denial():
+    # AC4: un bucle de reintentos tras denegacion de adi-shield es CORTADO
+    # por wallet-guard (que se suscribe al bus y ve el block de adi-shield).
+    tmp = tempfile.mktemp(suffix=".json")
+    rt = ShieldRuntime(_make_config(tmp))
+    _anchor(rt)
+    # 1) llamada maliciosa: adi-shield la bloquea y publica el block al bus
+    malicious = GenericToolCall(
+        task_id="T1",
+        tool="send_email",
+        args=[
+            GenericArg("to", "attacker@x.com", Channel.USER),
+            GenericArg("body", "hola", Channel.USER),
+        ],
+        objective_arg="to",
+        claimed_subobjective="report_summary",
+    )
+    v0 = rt.execute(malicious)
+    assert v0.decision == "block", v0.reasons
+    # 2) el agente reintenta el MISMO tool varias veces (bucle)
+    cut = False
+    for _ in range(5):
+        v = rt.execute(malicious)
+        if any("wallet" in r and ("loop" in r or "cut" in r or "retry" in r) for r in v.reasons):
+            cut = True
+            break
+    assert cut, f"wallet-guard debio cortar el bucle de reintentos tras denegacion: {v.reasons}"
+    # el executor nunca debio llamarse en ningun reintento bloqueado
+    assert rt.config.recorded_calls == [], "executor NO debe llamarse en el bucle cortado"

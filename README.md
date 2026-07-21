@@ -16,8 +16,15 @@ ningún tool-call se ejecuta sin pasar por ellos.
 
 ## Estado
 
-**SDD escrito, código NO implementado aún** (2026-07-19). El SDD está en
-[SDD.md](SDD.md). No se escribe código hasta aprobación de Sil al spec.
+Implementado y auditado en iteración continua (2026-07-19+). Runtime orquesta
+los 5 sensores reales vía `ShieldRuntime.execute()`; CI verde en GitHub
+Actions; tests e2e (AC1–AC5) + orquestación + regresión de recuperación, todos
+verdes. Ver [SDD.md](SDD.md) (§12 mejoras pendientes, §13 estado de hitos).
+
+Limitación honesta: el hook cubre la **cobertura de despliegue**, no la de
+detección. Los vectores de deriva sutil que preservan apariencia de alcance
+(WebTrap T1/T2/T4 de goal-anchor) siguen sin cerrarse (benchmark corregido:
+TPR=0.25 real, FPR=0.0). El runtime los orquesta, pero no inventa detección.
 
 ## Por qué existe
 
