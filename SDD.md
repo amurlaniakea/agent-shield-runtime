@@ -169,7 +169,14 @@ auditoría de Claude en clone fresco):
   sobreprometer. Work futuro (opcion 1/3 de Claude, NO hecho): (1) que
   GenericToolCall/exponga progreso real del framework; (3) que wallet-guard
   tenga TTL para `attempts`/`last_progress` (tocaria el repo wallet-guard, SDD
-  propio). Test: `test_P0bis_legit_repeated_calls_do_not_permablock` +
+  propio). **Riesgo residual (anotado por auditoria de Claude):** el proxy
+  "args distintos = avance" es trivialmente evadible (paginacion, cache-busting,
+  timestamp irrelevante) para el gate de `retry_loop_no_progress`. Mitigado por
+  capa independiente: `_spend(category, cost)` descuenta del `admission_budget`
+  en cada llamada y bloquea con `budget_exhausted` cuando se agota, sin depender
+  del proxy de progreso. El gate de bucle sin progreso queda debilitado como
+  deteccion temprana, pero el tope duro de coste total sigue intacto.
+  Test: `test_P0bis_legit_repeated_calls_do_not_permablock` +
   `test_P0bis_identical_repeat_still_capped` (el corte de reintento identico
   legitimo se preserva).
 
