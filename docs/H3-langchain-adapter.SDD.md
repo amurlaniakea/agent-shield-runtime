@@ -110,28 +110,34 @@ LLM (Thought/Reasoning) — demasiado frágil y no determinista para H3.
 
 ### 4.5 `Channel` por argumento (provenance para adi-shield)
 
-**Decisión:** Heurística por coincidencia con historial de `ToolMessage`:
+**Decisión:** Heurística por coincidencia de **token completo** con historial
+de `ToolMessage`:
 
 ```python
+import re
+
 def _infer_channel(value: str, history: list[BaseMessage]) -> Channel:
-    # umbral mínimo de longitud antes de considerar coincidencia:
-    # evita falsos positivos con valores cortos/genéricos ("1", "ok",
-    # dominios muy comunes) que coincidirían por azar con cualquier
-    # ToolMessage previo.
-    MIN_LEN = 8
-    if len(value) < MIN_LEN:
-        return Channel.MODEL
+    # coincidencia de TOKEN completo, no substring suelto:
+    # evita falsos positivos de "1" dentro de cualquier texto largo
+    # SIN crear punto ciego para valores cortos peligrosos (evil.io, IDs,
+    # flags) que SÍ deben ser detectados como TOOL_RESULT.
+    token_pat = re.compile(rf"(?<!\w){re.escape(value)}(?!\w)")
     for msg in reversed(history):
-        if isinstance(msg, ToolMessage):
-            if msg.content and value in str(msg.content):
+        if isinstance(msg, ToolMessage) and msg.content:
+            if token_pat.search(str(msg.content)):
                 return Channel.TOOL_RESULT  # untrusted
     return Channel.MODEL  # default: el LLM decidió el valor
 ```
 
 - `ToolMessage` (resultado de tool previo) → `TOOL_RESULT` (untrusted).
-- Si no hay coincidencia (o valor muy corto) → `MODEL` (el LLM decidió el valor).
+- Si no hay coincidencia de token completo → `MODEL` (el LLM decidió el valor).
 - NO se usa `USER` salvo que venga literalmente de `HumanMessage` (raro
   en tool args; se documenta como edge case).
+
+**Justificación:** límite de palabra (`(?<!\w)...(?!\w)`) resuelve el
+problema original (substring suelto "1" matcha dentro de cualquier texto)
+SIN crear punto ciego para valores cortos peligrosos (`evil.io`, flags,
+IDs) que SÍ deben ser detectados como provenientes de tool result.
 
 **Limitación documentada:** si el LLM parafrasea contenido malicioso
 en vez de copiarlo literal, no se detecta como `TOOL_RESULT`. No es
