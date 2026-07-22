@@ -103,7 +103,7 @@ class ShieldedTool(BaseTool):
         # Positional args are passed by name via the tool's args_schema
         # In LangChain, positional args are rare; kwargs dominate
         for k, v in kwargs.items():
-            if k != "config" and k != "history":
+            if k != "config":
                 all_args[k] = v
 
         # Build GenericArg list with Channel inference
