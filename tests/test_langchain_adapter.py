@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 
+from agent_shield_runtime.adapters.generic import Channel
 from agent_shield_runtime.adapters.langchain import (
     ShieldBlockError,
     ShieldConfirmRequired,
@@ -94,42 +95,59 @@ def test_shielded_tool_confirm(shielded_tool, runtime):
 
 
 def test_channel_inference_tool_result(shielded_tool):
-    # Mock runtime to return ALLOW verdict
-    with patch.object(
-        shielded_tool._runtime,
-        "execute",
-        return_value=RuntimeVerdict(decision="allow", blocked=False, reasons=[], result={}),
-    ):
-        # Simulate history with a prior tool result containing the token
-        history = [
-            HumanMessage(content="User query"),
-            AIMessage(content="I will use the tool"),
-            ToolMessage(content="Previous result: TOKEN123", tool_call_id="call1"),
-        ]
+    # Mock runtime to return ALLOW verdict and capture the call
+    captured = {}
 
-        # Call with a token that appears in the tool result
-        result = shielded_tool._run("arg1", "arg2", history=history)
-        # Should succeed (allow) but the Channel for 'arg2' should be TOOL_RESULT
-        assert result == "tool_result"
+    def fake_execute(call):
+        captured["call"] = call
+        return RuntimeVerdict(decision="allow", blocked=False, reasons=[], result={})
+
+    # Create a new ShieldedTool with a history provider
+    history = [
+        HumanMessage(content="User query"),
+        AIMessage(content="I will use the tool"),
+        ToolMessage(content="Previous result: TOKEN123", tool_call_id="call1"),
+    ]
+    shielded_tool_with_provider = ShieldedTool(
+        shielded_tool._tool,
+        runtime=shielded_tool._runtime,
+        claimed_subobjective={"test_tool": "test_subobjective"},
+        history_provider=lambda: history,
+    )
+
+    with patch.object(shielded_tool_with_provider._runtime, "execute", side_effect=fake_execute):
+        shielded_tool_with_provider._run(arg2="TOKEN123")
+
+    # Verify the Channel for 'arg2' is TOOL_RESULT
+    arg = next((a for a in captured["call"].args if a.name == "arg2"), None)
+    assert arg is not None
+    assert arg.channel == Channel.TOOL_RESULT  # el valor SI vino del ToolMessage
 
 
 def test_channel_inference_model(shielded_tool):
-    # Mock runtime to return ALLOW verdict
-    with patch.object(
-        shielded_tool._runtime,
-        "execute",
-        return_value=RuntimeVerdict(decision="allow", blocked=False, reasons=[], result={}),
-    ):
-        # Simulate history without the token
-        history = [
-            HumanMessage(content="User query"),
-            AIMessage(content="I will use the tool"),
-        ]
+    # Mock runtime to return ALLOW verdict and capture the call
+    captured = {}
 
-        # Call with a token that does NOT appear in any tool result
-        result = shielded_tool._run("arg1", "arg2", history=history)
-        # Should succeed (allow) and the Channel for 'arg2' should be MODEL
-        assert result == "tool_result"
+    def fake_execute(call):
+        captured["call"] = call
+        return RuntimeVerdict(decision="allow", blocked=False, reasons=[], result={})
+
+    # Create a new ShieldedTool with a history provider
+    history = [HumanMessage(content="User query")]  # sin ToolMessage relevante
+    shielded_tool_with_provider = ShieldedTool(
+        shielded_tool._tool,
+        runtime=shielded_tool._runtime,
+        claimed_subobjective={"test_tool": "test_subobjective"},
+        history_provider=lambda: history,
+    )
+
+    with patch.object(shielded_tool_with_provider._runtime, "execute", side_effect=fake_execute):
+        shielded_tool_with_provider._run(arg2="algo_no_visto_antes")
+
+    # Verify the Channel for 'arg2' is MODEL
+    arg = next((a for a in captured["call"].args if a.name == "arg2"), None)
+    assert arg is not None
+    assert arg.channel == Channel.MODEL
 
 
 def test_unknown_verdict(shielded_tool, runtime):
@@ -143,3 +161,49 @@ def test_unknown_verdict(shielded_tool, runtime):
             shielded_tool._run("arg1", "arg2")
 
         assert "Unknown verdict decision" in str(exc_info.value)
+
+
+def test_no_history_provider_defaults_to_model(shielded_tool):
+    # Mock runtime to return ALLOW verdict and capture the call
+    captured = {}
+
+    def fake_execute(call):
+        captured["call"] = call
+        return RuntimeVerdict(decision="allow", blocked=False, reasons=[], result={})
+
+    with patch.object(shielded_tool._runtime, "execute", side_effect=fake_execute):
+        # No history provider, so all args default to Channel.MODEL
+        shielded_tool._run(arg1="value1", arg2="value2")
+
+    # Verify all args have Channel.MODEL
+    for arg in captured["call"].args:
+        assert arg.channel == Channel.MODEL
+
+
+def test_with_history_provider(shielded_tool):
+    # Mock runtime to return ALLOW verdict and capture the call
+    captured = {}
+
+    def fake_execute(call):
+        captured["call"] = call
+        return RuntimeVerdict(decision="allow", blocked=False, reasons=[], result={})
+
+    # Create a new ShieldedTool with a history provider
+    history = [
+        HumanMessage(content="User query"),
+        ToolMessage(content="Previous result: TOKEN123", tool_call_id="call1"),
+    ]
+    shielded_tool_with_provider = ShieldedTool(
+        shielded_tool._tool,
+        runtime=shielded_tool._runtime,
+        claimed_subobjective={"test_tool": "test_subobjective"},
+        history_provider=lambda: history,
+    )
+
+    with patch.object(shielded_tool_with_provider._runtime, "execute", side_effect=fake_execute):
+        shielded_tool_with_provider._run(arg2="TOKEN123")
+
+    # Verify the Channel for 'arg2' is TOOL_RESULT
+    arg = next((a for a in captured["call"].args if a.name == "arg2"), None)
+    assert arg is not None
+    assert arg.channel == Channel.TOOL_RESULT

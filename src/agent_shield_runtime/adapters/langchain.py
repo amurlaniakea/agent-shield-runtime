@@ -2,8 +2,16 @@
 
 Traduce tool-calls de LangChain al formato interno GenericToolCall que
 el runtime entiende, preservando provenance (Channel) y objetivo declarado.
+
+Importante: sin un `history_provider` explícito, TODA detección de provenance
+vía historial queda desactivada; el adaptador degrada a confiar en el modelo
+para todos los argumentos (Channel.MODEL). Quien integra el adaptador DEBE
+proveer una función `history_provider` si quiere que la detección de inyección
+de `adi-shield` funcione (p.ej. devolviendo `state["messages"]` si usan
+LangGraph, o el objeto `BaseChatMessageHistory` de su sesión).
 """
 
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
@@ -23,6 +31,7 @@ class ShieldedTool(BaseTool):
         runtime: ShieldRuntime,
         claimed_subobjective: dict[str, str] | None = None,
         objective_arg: str | None = None,
+        history_provider: Callable[[], list[BaseMessage]] | None = None,
     ):
         super().__init__(
             name=tool.name,
@@ -33,6 +42,7 @@ class ShieldedTool(BaseTool):
         self._runtime = runtime
         self._claimed_subobjective = claimed_subobjective or {}
         self._objective_arg = objective_arg
+        self._history_provider = history_provider
 
     def _run(self, *args: Any, **kwargs: Any) -> Any:
         """Intercept tool execution with Agent Shield runtime."""
@@ -40,8 +50,8 @@ class ShieldedTool(BaseTool):
         config = kwargs.get("config", {})
         task_id = config.get("configurable", {}).get("thread_id") or str(uuid4())
 
-        # Extract history from RunnableConfig or kwargs
-        history = self._extract_history(kwargs)
+        # Get history from the provider if available, otherwise empty list
+        history = self._get_history()
 
         # Build GenericToolCall with proper Channel inference per argument
         call = self._build_tool_call(task_id, args, kwargs, history)
@@ -64,24 +74,15 @@ class ShieldedTool(BaseTool):
         else:
             raise ValueError(f"Unknown verdict decision: {verdict.decision}")
 
-    def _extract_history(self, kwargs: dict[str, Any]) -> list[BaseMessage]:
-        """Extract conversation history from LangChain context.
+    def _get_history(self) -> list[BaseMessage]:
+        """Get conversation history from the provider.
 
-        LangChain typically passes history via RunnableConfig or a dedicated
-        'history' kwarg. This method tries both and returns an empty list if
-        neither is available.
+        If no `history_provider` was provided, returns an empty list.
+        This means ALL provenance detection via history is disabled, and
+        the adapter will default to Channel.MODEL for all arguments.
         """
-        # Try RunnableConfig first
-        config = kwargs.get("config", {})
-        if config and hasattr(config, "get"):
-            # LangChain stores history under 'configurable' -> 'history'
-            history = config.get("configurable", {}).get("history")
-            if history:
-                return history
-        # Try explicit 'history' kwarg
-        history = kwargs.get("history")
-        if history:
-            return history
+        if self._history_provider:
+            return self._history_provider()
         return []
 
     def _build_tool_call(
