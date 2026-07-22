@@ -1,0 +1,67 @@
+from typing import Any
+from uuid import uuid4
+
+from langchain_core.tools import BaseTool
+
+from ..runtime import ShieldRuntime
+from .verdict import ShieldVerdict
+
+
+class ShieldedTool(BaseTool):
+    """A LangChain tool wrapped with Agent Shield runtime protection."""
+
+    def __init__(self, tool: BaseTool, claimed_subobjective: dict[str, str] | None = None):
+        super().__init__(
+            name=tool.name,
+            description=tool.description,
+            args_schema=tool.args_schema
+        )
+        self.tool = tool
+        self.claimed_subobjective = claimed_subobjective or {}
+
+    def _run(self, *args: Any, **kwargs: Any) -> Any:
+        """Intercept tool execution with Agent Shield runtime."""
+        # Extract task_id from RunnableConfig or generate a new one
+        config = kwargs.get('config', {})
+        task_id = config.get('configurable', {}).get('thread_id') or str(uuid4())
+
+        # Determine the channel (provenance)
+        channel = self._determine_channel(kwargs)
+
+        # Prepare the tool call for ShieldRuntime
+        tool_call = {
+            'tool_name': self.tool.name,
+            'args': args,
+            'kwargs': kwargs,
+            'task_id': task_id,
+            'claimed_subobjective': self.claimed_subobjective.get(self.tool.name, 'unspecified'),
+            'channel': channel
+        }
+
+        # Execute through ShieldRuntime
+        verdict = ShieldRuntime.execute(tool_call)
+
+        if verdict == ShieldVerdict.ALLOW:
+            return self.tool._run(*args, **kwargs)
+        elif verdict == ShieldVerdict.BLOCK:
+            raise ShieldBlockError(f"Tool execution blocked by Agent Shield: {self.tool.name}")
+        elif verdict == ShieldVerdict.CONFIRM:
+            raise ShieldConfirmRequired(f"Tool execution requires confirmation: {self.tool.name}")
+        else:
+            raise ValueError(f"Unknown verdict: {verdict}")
+
+    def _determine_channel(self, kwargs: dict[str, Any]) -> str:
+        """Determine the channel based on the tool call context."""
+        # This is a simplified version of the Channel logic from the SDD
+        # You should implement the full logic as specified in the SDD
+        return 'TOOL_RESULT'
+
+
+class ShieldBlockError(Exception):
+    """Exception raised when a tool call is blocked by Agent Shield."""
+    pass
+
+
+class ShieldConfirmRequired(Exception):
+    """Exception raised when a tool call requires human confirmation."""
+    pass
