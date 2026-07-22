@@ -13,16 +13,12 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program. If not, see https://www.gnu.org/licenses/.
 
 """agent-shield-runtime: hook de despliegue del ecosistema de defensa."""
 
 from __future__ import annotations
 
-# Exponer las clases directamente para que puedan importarse desde agent_shield_runtime
-from .adapters.langchain import Channel, GenericArg, GenericToolCall # Correcto, desde el adaptador
+from .adapters import Channel, GenericArg, GenericToolCall
 from .config import RuntimeConfig
 from .runtime import RuntimeVerdict, ShieldRuntime
 

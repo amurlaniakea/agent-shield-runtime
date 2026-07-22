@@ -13,13 +13,15 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program. If not, see https://www.gnu.org/licenses/.
 
-"""Adaptadores para integrar ShieldRuntime con frameworks de agentes AI.
+"""Adaptadores de framework para ShieldRuntime.
+
+Cada adaptador traduce el tool-call nativo del framework al `GenericToolCall`
+interno. El núcleo del runtime no depende de ningún framework concreto.
 """
 
-from . import langchain # noqa: F401
+from __future__ import annotations
 
-__all__ = ["langchain"]
+from .generic import Channel, GenericArg, GenericToolCall
+
+__all__ = ["Channel", "GenericArg", "GenericToolCall"]
