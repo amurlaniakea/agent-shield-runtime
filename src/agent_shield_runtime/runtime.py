@@ -316,6 +316,6 @@ class ShieldRuntime:
                 except Exception:  # timeout o excepcion del sensor
                     results[k] = _fake(
                         fail_closed,
-                        f"{k}:sensor_unavailable(fail_{'closed' if fail_closed else 'open'})",
+                        f"sensor_unavailable(fail_{'closed' if fail_closed else 'open'})",
                     )
         return tuple(results[k] for k in tasks)
