@@ -134,7 +134,13 @@ class ShieldRuntime:
         return anchor, policy
 
     # ---- interceptación principal ----
-    def execute(self, call: GenericToolCall) -> RuntimeVerdict:
+    def evaluate(self, call: GenericToolCall) -> RuntimeVerdict:
+        """Evalúa el tool-call contra los 5 sensores SIN ejecutarlo (dry-run).
+
+        Devuelve el veredicto agregado (block/confirm/allow) con `result=None`.
+        El middleware de Hermes usa ESTE método en `tool_request` para decidir
+        sin tocar el tool nativo; `execute()` añade la ejecución si allow.
+        """
         anchor, policy = self._load_anchor_policy(call.task_id)
 
         # Sensores INDEPENDIENTES (scope / adi / wallet) corren en PARALELO
@@ -242,7 +248,19 @@ class ShieldRuntime:
             if self.config.block_on_confirm:
                 return RuntimeVerdict("block", True, confirms)
             return RuntimeVerdict("confirm", True, confirms)
-        # todos allow -> ejecutar
+        # todos allow -> veredicto SIN ejecutar (dry-run; execute() añade la
+        # ejecución real si el llamador la quiere)
+        return RuntimeVerdict("allow", False, ["all sensors allow"], None)
+
+    def execute(self, call: GenericToolCall) -> RuntimeVerdict:
+        """Evalúa contra los 5 sensores y, si allow, ejecuta el tool nativo.
+
+        Comportamiento idéntico al `execute()` original (pre-refactor H3):
+        evalúa y, solo con todos los sensores en allow, invoca el executor.
+        """
+        verdict = self.evaluate(call)
+        if verdict.decision != "allow":
+            return verdict
         executor = self.config.executor
         if executor is None:  # defensivo: nunca debería ser None tras __post_init__
             return RuntimeVerdict("block", True, ["no executor configured"])

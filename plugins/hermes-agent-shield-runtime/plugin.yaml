@@ -1,0 +1,11 @@
+name: hermes-agent-shield-runtime
+version: "0.1.0"
+description: "Middleware de Agent Shield Runtime: intercepta cada tool-call y lo evalúa contra los 5 sensores de defensa (scope-lib, adi-shield, wallet-guard, goal-anchor, trajectory-sentinel) antes de ejecutarlo. Modo observación por defecto (registra veredictos sin bloquear); activar bloqueo vía config shield_observe_only=false."
+author: "Pedro Sordo Martínez <amurlaniakea@gmail.com>"
+license: AGPL-3.0-or-later
+middleware:
+  - tool_request
+  - tool_execution
+settings:
+  shield_observe_only: true
+  shield_tool_config: {}
