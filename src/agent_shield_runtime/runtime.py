@@ -263,13 +263,44 @@ class ShieldRuntime:
         timeout = self.config.sensor_timeout
         fail_closed = self.config.fail_mode != "open"
 
-        def _fake(blocked: bool, why: str) -> object:
-            # veredicto sustituto tipo-ADI para mantener la interfaz de decision
+        def _fake(blocked: bool, why: str, sensor_name: str = "") -> object:
+            """
+            Veredicto sustituto que soporta TODOS los sensores:
+            - ADI/Wallet: verdict (str), reason, mechanism, confidence
+            - Scope: verdict (con .value como Verdict enum), criterion, reason
+            """
+
+            class _FakeVerdict:
+                """Proxy que funciona como string para ADI/Wallet y como enum para Scope."""
+
+                def __init__(self, value: str):
+                    self._value = value
+
+                @property
+                def value(self) -> str:
+                    return self._value
+
+                def __eq__(self, other: object) -> bool:
+                    if isinstance(other, str):
+                        return self._value == other
+                    if isinstance(other, _FakeVerdict):
+                        return self._value == other._value
+                    return False
+
+                def __str__(self) -> str:
+                    return self._value
+
+                def __repr__(self) -> str:
+                    return f"Verdict({self._value})"
+
+            v = _FakeVerdict("block" if blocked else "allow")
+
             class _V:
-                verdict = "block" if blocked else "allow"
+                verdict = v
                 reason = why
                 mechanism = why
                 confidence = 1.0
+                criterion = "sensor_unavailable"
 
             return _V()
 
