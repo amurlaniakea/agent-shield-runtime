@@ -116,6 +116,7 @@ de `ToolMessage`:
 ```python
 import re
 
+
 def _infer_channel(value: str, history: list[BaseMessage]) -> Channel:
     # coincidencia de TOKEN completo, no substring suelto:
     # evita falsos positivos de "1" dentro de cualquier texto largo
@@ -160,6 +161,7 @@ outputs). Queda anotado como limitación conocida en el SDD.
 ```python
 class ShieldBlockError(Exception):
     def __init__(self, reason: str, verdict: RuntimeVerdict): ...
+
 
 class ShieldConfirmRequired(Exception):
     def __init__(self, details: dict, verdict: RuntimeVerdict): ...
