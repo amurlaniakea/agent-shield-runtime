@@ -134,7 +134,13 @@ class ShieldRuntime:
         return anchor, policy
 
     # ---- interceptación principal ----
-    def execute(self, call: GenericToolCall) -> RuntimeVerdict:
+    def evaluate(self, call: GenericToolCall) -> RuntimeVerdict:
+        """Evalúa el tool-call contra los 5 sensores SIN ejecutarlo (dry-run).
+
+        Devuelve el veredicto agregado (block/confirm/allow) con `result=None`.
+        El middleware de Hermes usa ESTE método en `tool_request` para decidir
+        sin tocar el tool nativo; `execute()` añade la ejecución si allow.
+        """
         anchor, policy = self._load_anchor_policy(call.task_id)
 
         # Sensores INDEPENDIENTES (scope / adi / wallet) corren en PARALELO
@@ -242,7 +248,19 @@ class ShieldRuntime:
             if self.config.block_on_confirm:
                 return RuntimeVerdict("block", True, confirms)
             return RuntimeVerdict("confirm", True, confirms)
-        # todos allow -> ejecutar
+        # todos allow -> veredicto SIN ejecutar (dry-run; execute() añade la
+        # ejecución real si el llamador la quiere)
+        return RuntimeVerdict("allow", False, ["all sensors allow"], None)
+
+    def execute(self, call: GenericToolCall) -> RuntimeVerdict:
+        """Evalúa contra los 5 sensores y, si allow, ejecuta el tool nativo.
+
+        Comportamiento idéntico al `execute()` original (pre-refactor H3):
+        evalúa y, solo con todos los sensores en allow, invoca el executor.
+        """
+        verdict = self.evaluate(call)
+        if verdict.decision != "allow":
+            return verdict
         executor = self.config.executor
         if executor is None:  # defensivo: nunca debería ser None tras __post_init__
             return RuntimeVerdict("block", True, ["no executor configured"])
@@ -263,44 +281,30 @@ class ShieldRuntime:
         timeout = self.config.sensor_timeout
         fail_closed = self.config.fail_mode != "open"
 
-        def _fake(blocked: bool, why: str, sensor_name: str = "") -> object:
-            """
-            Veredicto sustituto que soporta TODOS los sensores:
-            - ADI/Wallet: verdict (str), reason, mechanism, confidence
-            - Scope: verdict (con .value como Verdict enum), criterion, reason
-            """
+        def _fake(blocked: bool, why: str) -> object:
+            # veredicto sustituto que replica la interfaz de main: Scope lee
+            # `verdict.value` (objeto con .value) y ADI/Wallet leen `verdict`
+            # comparando contra string. `why` ya lleva el prefijo "{k}:" (nombre
+            # del sensor) que H3 añadió, preservando "qué sensor falló".
+            v = "block" if blocked else "allow"
 
-            class _FakeVerdict:
-                """Proxy que funciona como string para ADI/Wallet y como enum para Scope."""
-
-                def __init__(self, value: str):
-                    self._value = value
-
-                @property
-                def value(self) -> str:
-                    return self._value
+            class _VerdictLike:
+                def __init__(self, value: str) -> None:
+                    self.value = value
 
                 def __eq__(self, other: object) -> bool:
-                    if isinstance(other, str):
-                        return self._value == other
-                    if isinstance(other, _FakeVerdict):
-                        return self._value == other._value
-                    return False
+                    return self.value == other
 
                 def __str__(self) -> str:
-                    return self._value
-
-                def __repr__(self) -> str:
-                    return f"Verdict({self._value})"
-
-            v = _FakeVerdict("block" if blocked else "allow")
+                    return self.value
 
             class _V:
-                verdict = v
-                reason = why
-                mechanism = why
-                confidence = 1.0
-                criterion = "sensor_unavailable"
+                def __init__(self) -> None:
+                    self.verdict = _VerdictLike(v)
+                    self.reason = why
+                    self.mechanism = why
+                    self.confidence = 1.0
+                    self.criterion = why
 
             return _V()
 
@@ -316,6 +320,6 @@ class ShieldRuntime:
                 except Exception:  # timeout o excepcion del sensor
                     results[k] = _fake(
                         fail_closed,
-                        f"sensor_unavailable(fail_{'closed' if fail_closed else 'open'})",
+                        f"{k}:sensor_unavailable(fail_{'closed' if fail_closed else 'open'})",
                     )
         return tuple(results[k] for k in tasks)
