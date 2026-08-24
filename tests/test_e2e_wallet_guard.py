@@ -11,6 +11,7 @@ Aísla wallet-guard del resto de sensores:
   SOLO por wallet (presupuesto agotado). La aserción 'wallet' in reasons
   fallaría si otro sensor bloqueara en su lugar (falso negativo evitado).
 """
+
 from __future__ import annotations
 
 from agent_shield_runtime.adapters.hermes import HermesAdapter

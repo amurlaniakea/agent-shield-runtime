@@ -115,11 +115,18 @@ def make_callbacks(adapter: HermesAdapter, observe_only: bool = False) -> dict[s
             _state.put(key, verdict)
             logger.info(
                 "agent-shield evaluate %s -> %s (%s)",
-                tool_name, verdict.decision, ";".join(verdict.reasons[:3]),
+                tool_name,
+                verdict.decision,
+                ";".join(verdict.reasons[:3]),
             )
         except Exception as exc:  # fail-closed: un adapter/runtime roto = cero evaluación
             logger.warning("agent-shield tool_request error (fail-closed): %s", exc)
-            _state.put(key, RuntimeVerdict("block", True, ["internal_error:adapter_or_orchestration", str(exc)]))
+            _state.put(
+                key,
+                RuntimeVerdict(
+                    "block", True, ["internal_error:adapter_or_orchestration", str(exc)]
+                ),
+            )
 
     def on_tool_execution(**kwargs: Any) -> Any:
         """Ejecuta o bloquea según el veredicto guardado en tool_request."""
@@ -133,9 +140,7 @@ def make_callbacks(adapter: HermesAdapter, observe_only: bool = False) -> dict[s
             verdict = _state.pop(key)
             if verdict is None:
                 # fail-open sin veredicto: ejecutar normal (warning en log)
-                logger.warning(
-                    "agent-shield sin veredicto para %s (fail-open)", tool_name
-                )
+                logger.warning("agent-shield sin veredicto para %s (fail-open)", tool_name)
                 if next_call:
                     return next_call(args)
                 return None
@@ -149,7 +154,9 @@ def make_callbacks(adapter: HermesAdapter, observe_only: bool = False) -> dict[s
                 # modo observación: registra pero NO bloquea (AC6)
                 logger.warning(
                     "agent-shield OBSERVE %s %s (no bloqueado): %s",
-                    verdict.decision, tool_name, ";".join(verdict.reasons[:3]),
+                    verdict.decision,
+                    tool_name,
+                    ";".join(verdict.reasons[:3]),
                 )
                 if next_call:
                     return next_call(args)

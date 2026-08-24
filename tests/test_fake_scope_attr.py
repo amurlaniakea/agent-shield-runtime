@@ -10,34 +10,42 @@ AttributeError. Este test fuerza explícitamente que SEA SCOPE el sensor roto
 (no adi/wallet como el test existente), y verifica que tanto `verdict.value`
 como `criterion` funcionan sin crash, y que el veredicto resultante es block.
 """
+
 from __future__ import annotations
 
 from unittest import mock
+
+from scope_lib import Policy
 
 from agent_shield_runtime.adapters.hermes import HermesAdapter
 from agent_shield_runtime.config import RuntimeConfig
 from agent_shield_runtime.plugin import make_callbacks
 from agent_shield_runtime.runtime import ShieldRuntime
 
-from scope_lib import Policy
-
 
 def _policy(task: str = "t1") -> Policy:
     return Policy(
-        policy_id="p1", task_id=task,
+        policy_id="p1",
+        task_id=task,
         authorized_subobjectives=["leer_archivos"],
         authorized_resources={"path": ["/tmp/publico"]},
         deny=["/tmp/secretos/credenciales.txt"],
         admission_budget={"read_file": 100.0},
-        allowed_transitions={}, authorized_irreversible=[], authorized_flows=[],
+        allowed_transitions={},
+        authorized_irreversible=[],
+        authorized_flows=[],
     )
 
 
 def _runtime(tmp_path, fail_mode="closed") -> ShieldRuntime:
-    return ShieldRuntime(RuntimeConfig(
-        policy_store_path=str(tmp_path / "ps.json"),
-        sensor_timeout=5.0, budget={"read_file": 100.0}, fail_mode=fail_mode,
-    ))
+    return ShieldRuntime(
+        RuntimeConfig(
+            policy_store_path=str(tmp_path / "ps.json"),
+            sensor_timeout=5.0,
+            budget={"read_file": 100.0},
+            fail_mode=fail_mode,
+        )
+    )
 
 
 def test_scope_sensor_timeout_exposes_value_and_criterion(tmp_path):
@@ -49,11 +57,14 @@ def test_scope_sensor_timeout_exposes_value_and_criterion(tmp_path):
     runtime.confirm_anchor("t1", "leer archivos", ["leer_archivos"], policy=_policy())
     adapter = HermesAdapter(
         runtime=runtime,
-        tool_config={"read_file": {"objective_arg": "path", "claimed_subobjective": "leer_archivos"}},
+        tool_config={
+            "read_file": {"objective_arg": "path", "claimed_subobjective": "leer_archivos"}
+        },
     )
     cbs = make_callbacks(adapter, observe_only=False)
 
     executed = []
+
     def next_call(args):
         executed.append(args)
         return "native_result"
@@ -61,14 +72,23 @@ def test_scope_sensor_timeout_exposes_value_and_criterion(tmp_path):
     # Scope lanza dentro de _run_parallel => _fake block con .value/.criterion.
     # Parchear evaluate_scope (scope_lib) para que Scope explote exactamente
     # igual que un timeout/excepción real del sensor.
-    with mock.patch("agent_shield_runtime.runtime.evaluate_scope", side_effect=RuntimeError("scope exploded")):
+    with mock.patch(
+        "agent_shield_runtime.runtime.evaluate_scope", side_effect=RuntimeError("scope exploded")
+    ):
         cbs["tool_request"](
-            tool_name="read_file", args={"path": "/tmp/publico/hola.txt"},
-            task_id="t1", session_id="s1", turn_id="turn1", tool_call_id="tc-scope-err",
+            tool_name="read_file",
+            args={"path": "/tmp/publico/hola.txt"},
+            task_id="t1",
+            session_id="s1",
+            turn_id="turn1",
+            tool_call_id="tc-scope-err",
         )
         r = cbs["tool_execution"](
-            tool_name="read_file", args={"path": "/tmp/publico/hola.txt"},
-            turn_id="turn1", tool_call_id="tc-scope-err", next_call=next_call,
+            tool_name="read_file",
+            args={"path": "/tmp/publico/hola.txt"},
+            turn_id="turn1",
+            tool_call_id="tc-scope-err",
+            next_call=next_call,
         )
 
     # Sin AttributeError: el veredicto debe ser block (fail-closed por scope roto)

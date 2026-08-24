@@ -4,18 +4,22 @@ NO importa sensores: usa GenericToolCall directamente (del propio repo).
 Verifica reconstrucción de traza JED y los 4 predicates espejo de blankbox.
 """
 
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from agent_shield_runtime.adapters.generic import GenericToolCall, GenericArg, Channel
+from agent_shield_runtime.adapters.generic import Channel, GenericArg, GenericToolCall
 from agent_shield_runtime.jed_trace import calls_to_jed_trace, eval_jed_predicates
 
 
 def _call(tool, args, irreversible=False, claimed=None):
     return GenericToolCall(
-        task_id="T1", tool=tool,
+        task_id="T1",
+        tool=tool,
         args=[GenericArg(name=k, value=v, channel=Channel.USER) for k, v in args.items()],
-        irreversible=irreversible, claimed_subobjective=claimed,
+        irreversible=irreversible,
+        claimed_subobjective=claimed,
     )
 
 

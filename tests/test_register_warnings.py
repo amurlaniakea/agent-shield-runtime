@@ -12,22 +12,24 @@ Caso sano (settings con policy_store_path real): 0 warnings de policy, 1 de
 channel (porque channel_infer no es serializable en YAML => default ciego).
 Sigue la disciplina de contraste: probar AMBOS lados del if.
 """
+
 from __future__ import annotations
 
 import logging
-
-import pytest
 
 from agent_shield_runtime.plugin import register
 
 
 class _CtxReal:
     """Mock fiel al contrato PluginContext.get_config del harness real."""
+
     def __init__(self, settings: dict | None = None):
         self._settings = settings or {}
         self.registered = []
+
     def get_config(self, key, default=None):
         return self._settings.get(key, default)
+
     def register_middleware(self, name, fn):
         self.registered.append(name)
 
@@ -38,11 +40,14 @@ def test_register_default_settings_emits_two_blindness_warnings(capsys, caplog):
         register(ctx)
 
     out = capsys.readouterr().out
-    printed = [l for l in out.splitlines() if l.startswith("[AGENT-SHIELD]")]
+    printed = [line for line in out.splitlines() if line.startswith("[AGENT-SHIELD]")]
     assert len(printed) == 2, f"default debe dar 2 avisos, fueron: {printed}"
 
-    agent_warns = [r.getMessage() for r in caplog.records
-                   if r.levelno == logging.WARNING and r.getMessage().startswith("AGENT-SHIELD CONFIG")]
+    agent_warns = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.WARNING and r.getMessage().startswith("AGENT-SHIELD CONFIG")
+    ]
     assert len(agent_warns) == 2
     joined = " ".join(agent_warns)
     assert "UNTRUSTED-TO-ACTION DESACTIVADO" in joined
@@ -61,12 +66,15 @@ def test_register_with_real_policy_store_path_emits_only_channel_warning(capsys,
         register(ctx)
 
     out = capsys.readouterr().out
-    printed = [l for l in out.splitlines() if l.startswith("[AGENT-SHIELD]")]
+    printed = [line for line in out.splitlines() if line.startswith("[AGENT-SHIELD]")]
     # exactamente 1 warning: solo el de channel (policy resuelto con path real)
     assert len(printed) == 1, f"con policy real debe dar 1 aviso (channel), fue: {printed}"
 
-    agent_warns = [r.getMessage() for r in caplog.records
-                   if r.levelno == logging.WARNING and r.getMessage().startswith("AGENT-SHIELD CONFIG")]
+    agent_warns = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.WARNING and r.getMessage().startswith("AGENT-SHIELD CONFIG")
+    ]
     assert len(agent_warns) == 1
     assert "UNTRUSTED-TO-ACTION DESACTIVADO" in agent_warns[0]
     assert "no_active_anchor" not in agent_warns[0], "policy resuelto => no warning 2"

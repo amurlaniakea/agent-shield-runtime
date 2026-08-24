@@ -13,35 +13,42 @@ o acceptar el _fake block si fail_mode="closed").
 Esto confirma que el fix de fail-closed no rompe el comportamiento EXISTENTE de
 degradación tolerante para sensores individuales.
 """
+
 from __future__ import annotations
 
 from unittest import mock
 
-from agent_shield_runtime.adapters.generic import Channel, GenericArg, GenericToolCall
+from scope_lib import Policy
+
 from agent_shield_runtime.adapters.hermes import HermesAdapter
 from agent_shield_runtime.config import RuntimeConfig
 from agent_shield_runtime.plugin import make_callbacks
 from agent_shield_runtime.runtime import ShieldRuntime
 
-from scope_lib import Policy
-
 
 def _policy(task: str = "t1") -> Policy:
     return Policy(
-        policy_id="p1", task_id=task,
+        policy_id="p1",
+        task_id=task,
         authorized_subobjectives=["leer_archivos"],
         authorized_resources={"path": ["/tmp/publico"]},
         deny=["/tmp/secretos/credenciales.txt"],
         admission_budget={"read_file": 100.0},
-        allowed_transitions={}, authorized_irreversible=[], authorized_flows=[],
+        allowed_transitions={},
+        authorized_irreversible=[],
+        authorized_flows=[],
     )
 
 
 def _runtime(tmp_path, fail_mode="open") -> ShieldRuntime:
-    return ShieldRuntime(RuntimeConfig(
-        policy_store_path=str(tmp_path / "ps.json"),
-        sensor_timeout=5.0, budget={"read_file": 100.0}, fail_mode=fail_mode,
-    ))
+    return ShieldRuntime(
+        RuntimeConfig(
+            policy_store_path=str(tmp_path / "ps.json"),
+            sensor_timeout=5.0,
+            budget={"read_file": 100.0},
+            fail_mode=fail_mode,
+        )
+    )
 
 
 def test_sensor_exception_inside_run_parallel_does_not_fail_closed(tmp_path):
@@ -58,11 +65,14 @@ def test_sensor_exception_inside_run_parallel_does_not_fail_closed(tmp_path):
     runtime.confirm_anchor("t1", "leer archivos", ["leer_archivos"], policy=_policy())
     adapter = HermesAdapter(
         runtime=runtime,
-        tool_config={"read_file": {"objective_arg": "path", "claimed_subobjective": "leer_archivos"}},
+        tool_config={
+            "read_file": {"objective_arg": "path", "claimed_subobjective": "leer_archivos"}
+        },
     )
     cbs = make_callbacks(adapter, observe_only=False)
 
     executed = []
+
     def next_call(args):
         executed.append(args)
         return "native_result"
@@ -71,14 +81,25 @@ def test_sensor_exception_inside_run_parallel_does_not_fail_closed(tmp_path):
     # por _fake(fail_mode="open") => allow, NO por el except de on_tool_request.
     with mock.patch.object(runtime.wallet, "evaluate", side_effect=RuntimeError("sensor exploded")):
         cbs["tool_request"](
-            tool_name="read_file", args={"path": "/tmp/publico/hola.txt"},
-            task_id="t1", session_id="s1", turn_id="turn1", tool_call_id="tc-sensor-err",
+            tool_name="read_file",
+            args={"path": "/tmp/publico/hola.txt"},
+            task_id="t1",
+            session_id="s1",
+            turn_id="turn1",
+            tool_call_id="tc-sensor-err",
         )
         r = cbs["tool_execution"](
-            tool_name="read_file", args={"path": "/tmp/publico/hola.txt"},
-            turn_id="turn1", tool_call_id="tc-sensor-err", next_call=next_call,
+            tool_name="read_file",
+            args={"path": "/tmp/publico/hola.txt"},
+            turn_id="turn1",
+            tool_call_id="tc-sensor-err",
+            next_call=next_call,
         )
 
     # fail_mode=open + sensor lanzó => _fake(allow) => SÍ ejecuta (no fail-closed)
-    assert r == "native_result", f"sensor roto en _run_parallel + fail_mode=open debe allow+executar, fue: {r!r}"
-    assert len(executed) == 1, "el sensor roto no debe bloquear todo el tool (fail-open para sensores)"
+    assert r == "native_result", (
+        f"sensor roto en _run_parallel + fail_mode=open debe allow+executar, fue: {r!r}"
+    )
+    assert len(executed) == 1, (
+        "el sensor roto no debe bloquear todo el tool (fail-open para sensores)"
+    )
